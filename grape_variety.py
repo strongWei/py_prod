@@ -5,88 +5,48 @@
 from requests_html import HTMLSession
 import pymysql.cursors
 
-def splitAreaText(area_text):
+def splitGrapeText(grape_text):
     try:
-        startI = area_text.index('(',0)
-        endI = area_text.index(')',startI)
-        num = area_text[startI+1:endI]
-        return num
+        startI = grape_text.index('(',0)
+        endI = grape_text.index(')',startI)
+        name = grape_text[:startI]
+        en_name = grape_text[startI+1:endI]
+        return [name, en_name] 
     except ValueError:
         return False
 
-def splitAreaName(area):
-    areas = area.split('  ')
-    return areas
 
-def requestGrapeVariety(chateau_obj,session,connection):
-    req = session.get(chateau_obj['url'])
-    lis = req.html.find('.wineRegion2 li a')
-
-    for value in lis:
-       if 'class' in value.attrs and 'curr' in value.attrs['class'] :
-          #get the child chateau
-          childs = req.html.find('.sch-kng ul li a p span.cname')
-          for child in childs:
-              area_names = child.text.split(' ') 
-              name = area_names[0]
-              en_name = area_names[1]
-              layer_ids = '';
-              if 'layer_ids' in chateau_obj:
-                  layer_ids = str(chateau_obj['layer_ids']) +  '_' + str(chateau_obj['id'])
-              else:
-                  layer_ids = '0'
-              chateau = {
-                  'name': name,
-                  'en_name': en_name,
-                  'child_num': 0,
-                  'parent_id': chateau_obj['id'],
-                  'layer_ids': layer_ids
-              }
-              persistentChateau(chateau, connection)
-
-          return    
-    for value in lis:
-        area_names = splitAreaName(value.attrs['title']) 
-        name = area_names[0]
-        en_name = area_names[1]
-        child_num = splitAreaText(value.text) 
-        layer_ids = '';
-        if 'layer_ids' in chateau_obj:
-            layer_ids = str(chateau_obj['layer_ids']) +  '_' + str(chateau_obj['id'])
-        else:
-            layer_ids = '0'
-        chateau = {
-            'name': name,
-            'en_name': en_name,
-            'child_num': child_num,
-            'url': value.attrs['href'],
-            'parent_id': chateau_obj['id'],
-            'layer_ids': layer_ids
-        }
-        persistentChateau(chateau, connection)
-        requestGrapeVariety(chateau, session, connection)
+def requestGrapeVariety(session,connection):
+    req = session.get('https://www.wine-world.com/grape')
+    grapeSets = req.html.find('.itemcard2 .grape-set')
     
-def persistentChateau(chateau_obj,connection):
+    alphas = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V',
+            'W','X','Y','Z']
+    for grapeSet in grapeSets:
+        data = grapeSet.find('li a')
+        alpha = alphas[grapeSets.index(grapeSet)]
+        for item in data:
+            grape_names = splitGrapeText(item.text.strip())
+            grape = {
+                'name': grape_names[0],
+                'en_name': grape_names[1],
+                'alpha': alpha,
+            }
+            persisGraphVariety(grape, connection)
+
+
+def persisGraphVariety(grape, connection):
     with connection.cursor() as cursor:
-        sql = """insert into b_chateau(name,en_name,child_num,parent_id,layer_ids)
-        values(%s,%s,%s,%s,%s)
+        sql = """insert into b_grape_variety(name,en_name,alpha)
+        values(%s,%s,%s)
         """
-        cursor.execute(sql, (chateau_obj['name'], chateau_obj['en_name'], chateau_obj['child_num'], chateau_obj['parent_id'],
-            chateau_obj['layer_ids']))
-        
+        cursor.execute(sql, (grape['name'], grape['en_name'], grape['alpha']) )
         connection.commit()
-        chateau_obj['id'] = cursor.lastrowid 
-        return chateau_obj
 
 session = HTMLSession()
 connection = pymysql.connect(host='172.19.0.4', user='root', password='123456', db='buy', charset='utf8', cursorclass=pymysql.cursors.DictCursor)
-
 try:
-    root={
-        'id':0,
-        'url':'https://www.wine-world.com/winery/area'
-    }
-    requestGrapeVariety(root, session, connection)
+    requestGrapeVariety( session, connection)
 finally:
     connection.close()
     print('complete')
