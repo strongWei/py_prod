@@ -22,7 +22,7 @@ class WineDataFlowV2:
                 'parent_id': '',
                 'grade': 0,
                 'id':0
-               }
+                }
         while True:
             if self.__getChateauByPage(page, root):
                 page = page + 1
@@ -44,11 +44,15 @@ class WineDataFlowV2:
         finalUrl = parent_chateau['link'] + '/p' + str(page)
         resp = self._session.get(finalUrl)
 
-        lis = resp.html.find('.sch-kng ul li a p span.cname')
+        #lis = resp.html.find('.sch-kng ul li a p span.cname')
+        lis = resp.html.find('.sch-kng ul li')
 
         if lis:
             for li in lis:
-                area_names = self.__splitAreaName(li.text.strip(), ' ')
+                link = li.find('a')[0].attrs['href']
+                text = li.find('.cname')[0].text
+
+                area_names = self.__splitAreaName(text.strip(), ' ')
                 if area_names:
                     layer_ids = '0'
                     if parent_chateau['layer_ids']:
@@ -62,6 +66,7 @@ class WineDataFlowV2:
                             'layer_ids': layer_ids,
                             'parent_id': parent_chateau['id'],
                             'grade': parent_chateau['grade']+1,
+                            'link': link
                             }
                     self.__insertChateau(chateau)
                 else:
@@ -131,9 +136,10 @@ class WineDataFlowV2:
                             }
                     chateau['child_num'] = self.__splitChildNum(li.text)
                     producing_area = self.__insertChateau(chateau)
-                    #self.producing_areas.append(producing_area)
+                    if not producing_area:
+                        continue
                     if not self.getProducingAreas(chateau):
-                        break
+                        continue
         return True
 
     def __splitAreaName(self, area_text, split=' '):
@@ -173,20 +179,48 @@ class WineDataFlowV2:
 
                 connection.commit()
                 chateau['id'] = cursor.lastrowid 
+                if not chateau['id']:
+                    return False
                 return chateau
 
             return False
+
+    def getProducingAreasFromDb(self):
+        """ get producing_areas from db """
+        with connection.cursor() as cursor:
+            sql = """select * from b_chateau_1 where type=%s order by grade desc"""
+            cursor.execute(sql, (1))
+            while True:
+                producing_area = cursor.fetchone()
+                if producing_area:
+                    self.getChateau(producing_area)
+                else:
+                    break
+    
+    def getProducingAreasFromDbCountry(self):
+        """ get producing_areas from db """
+        with connection.cursor() as cursor:
+            sql = """select * from b_chateau_1 where type=%s"""
+            cursor.execute(sql, (0))
+            while True:
+                producing_area = cursor.fetchone()
+                if producing_area:
+                    self.getChateau(producing_area)
+                else:
+                    break
 
 try:
     connection = pymysql.connect(host='172.19.0.4', user='root', password='123456', 
             db='buy', charset='utf8', cursorclass=pymysql.cursors.DictCursor)
     session = HTMLSession()
     wineDataFlow = WineDataFlowV2(connection, session)
-    #wineDataFlow.getAllChateau()
-    countries = wineDataFlow.getCountries()
-    if countries:
-        for country in countries:
-            wineDataFlow.getProducingAreas(country)
+    wineDataFlow.getAllChateau()
+    #countries = wineDataFlow.getCountries()
+    #if countries:
+    #    for country in countries:
+    #        wineDataFlow.getProducingAreas(country)
+    #wineDataFlow.getProducingAreasFromDb()
+    #wineDataFlow.getProducingAreasFromDbCountry()
 
 finally:
     connection.close()
